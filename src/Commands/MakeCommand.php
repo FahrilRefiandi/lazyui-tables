@@ -7,8 +7,6 @@ use Illuminate\Contracts\Console\PromptsForMissingInput;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use Livewire\Features\SupportConsoleCommands\Commands\ComponentParser;
-use Livewire\Features\SupportConsoleCommands\Commands\MakeCommand as LivewireMakeCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Finder\Finder;
@@ -21,7 +19,7 @@ use function Laravel\Prompts\text;
  */
 class MakeCommand extends Command implements PromptsForMissingInput
 {
-    protected ComponentParser $parser;
+    protected TableComponentParser $parser;
 
     /**
      * @var string
@@ -56,15 +54,13 @@ class MakeCommand extends Command implements PromptsForMissingInput
      */
     public function handle(): void
     {
-        $this->parser = new ComponentParser(
-            config('livewire.class_namespace'),
-            config('livewire.view_path'),
+        $this->parser = new TableComponentParser(
+            config('livewire.class_namespace', 'App\\Livewire'),
+            config('livewire.view_path', resource_path('views/livewire')),
             $this->argument('name')
         );
 
-        $livewireMakeCommand = new LivewireMakeCommand;
-
-        if ($livewireMakeCommand->isReservedClassName($name = $this->parser->className())) {
+        if ($this->isReservedClassName($name = $this->parser->className())) {
             $this->line("<fg=red;options=bold>Class is reserved:</> {$name}");
 
             return;
@@ -77,7 +73,7 @@ class MakeCommand extends Command implements PromptsForMissingInput
 
         $this->createClass($force);
 
-        $this->info('Livewire Datatable Created: '.$this->parser->className());
+        $this->info('Livewire Datatable Created: ' . $this->parser->className());
     }
 
     protected function createClass(bool $force = false): bool
@@ -94,7 +90,7 @@ class MakeCommand extends Command implements PromptsForMissingInput
 
         File::put($classPath, $this->classContents());
 
-        return $classPath;
+        return true;
     }
 
     protected function ensureDirectoryExists(string $path): void
@@ -109,22 +105,22 @@ class MakeCommand extends Command implements PromptsForMissingInput
         return str_replace(
             ['[namespace]', '[class]', '[model]', '[model_import]', '[columns]'],
             [$this->parser->classNamespace(), $this->parser->className(), $this->model, $this->getModelImport(), $this->generateColumns($this->getModelImport())],
-            file_get_contents(__DIR__.DIRECTORY_SEPARATOR.'table.stub')
+            file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . 'table.stub')
         );
     }
 
     public function getModelImport(): string
     {
-        if (File::exists(app_path('Models/'.$this->model.'.php'))) {
-            return 'App\Models\\'.$this->model;
+        if (File::exists(app_path('Models/' . $this->model . '.php'))) {
+            return 'App\Models\\' . $this->model;
         }
 
-        if (File::exists(app_path($this->model.'.php'))) {
-            return 'App\\'.$this->model;
+        if (File::exists(app_path($this->model . '.php'))) {
+            return 'App\\' . $this->model;
         }
 
         if (isset($this->modelPath)) {
-            $filename = rtrim($this->modelPath, '/').'/'.$this->model.'.php';
+            $filename = rtrim($this->modelPath, '/') . '/' . $this->model . '.php';
             if (File::exists($filename)) {
                 // In case the file has more than one class which is highly unlikely but still possible
                 $classes = array_filter($this->getClassesList($filename), function ($class) {
@@ -138,7 +134,7 @@ class MakeCommand extends Command implements PromptsForMissingInput
 
         $this->error('Could not find path to model.');
 
-        return 'App\Models\\'.$this->model;
+        return 'App\Models\\' . $this->model;
     }
 
     /*
@@ -167,7 +163,7 @@ class MakeCommand extends Command implements PromptsForMissingInput
                     }
 
                     if ($tokens[$j]->getTokenName() === 'T_STRING') {
-                        $classes[] = $namespace.'\\'.$tokens[$j]->text;
+                        $classes[] = $namespace . '\\' . $tokens[$j]->text;
                     } else {
                         break;
                     }
@@ -204,7 +200,7 @@ class MakeCommand extends Command implements PromptsForMissingInput
 
             $title = Str::of($field)->replace('_', ' ')->ucfirst();
 
-            $columns .= '            Column::make("'.$title.'", "'.$field.'")'."\n".'                ->sortable(),'."\n";
+            $columns .= '            Column::make("' . $title . '", "' . $field . '")' . "\n" . '                ->sortable(),' . "\n";
         }
 
         $columns .= '        ]';
@@ -217,7 +213,7 @@ class MakeCommand extends Command implements PromptsForMissingInput
         $modelPath = is_dir(app_path('Models')) ? app_path('Models') : app_path();
 
         return collect(Finder::create()->files()->depth(0)->in($modelPath))
-            ->map(fn ($file) => $file->getBasename('.php'))
+            ->map(fn($file) => $file->getBasename('.php'))
             ->sort()
             ->values()
             ->all();
@@ -225,7 +221,6 @@ class MakeCommand extends Command implements PromptsForMissingInput
 
     protected function promptForMissingArguments(InputInterface $input, OutputInterface $output): void
     {
-
         if ($this->didReceiveOptions($input)) {
             return;
         }
@@ -258,5 +253,132 @@ class MakeCommand extends Command implements PromptsForMissingInput
                 $input->setArgument('modelpath', $modelPath);
             }
         }
+    }
+
+    protected function isReservedClassName(string $name): bool
+    {
+        $reserved = [
+            'parent',
+            'component',
+            'interface',
+            'class',
+            'trait',
+            'abstract',
+            'implements',
+            'extends',
+            'public',
+            'protected',
+            'private',
+            'static',
+            'final',
+            'const',
+            'function',
+            'void',
+            'null',
+            'true',
+            'false',
+            'mixed',
+            'object',
+            'resource',
+            'callable',
+            'iterable',
+            'string',
+            'int',
+            'float',
+            'bool',
+            'array',
+            'self',
+            'list',
+            'foreach',
+            'for',
+            'while',
+            'do',
+            'if',
+            'else',
+            'elseif',
+            'switch',
+            'case',
+            'default',
+            'break',
+            'continue',
+            'return',
+            'try',
+            'catch',
+            'finally',
+            'throw',
+            'use',
+            'namespace',
+            'new',
+            'clone',
+            'instanceof',
+            'global',
+            'isset',
+            'empty',
+            'eval',
+            'exit',
+            'die',
+            'include',
+            'include_once',
+            'require',
+            'require_once',
+            'echo',
+            'print',
+            'yield',
+        ];
+
+        return in_array(strtolower($name), $reserved);
+    }
+}
+
+/**
+ * Class TableComponentParser
+ * Menggantikan parser bawaan Livewire yang hilang di v4
+ */
+class TableComponentParser
+{
+    protected string $baseNamespace;
+    protected string $baseViewPath;
+    protected string $component;
+
+    public function __construct(string $baseNamespace, string $baseViewPath, string $component)
+    {
+        $this->baseNamespace = $baseNamespace ?: 'App\\Livewire';
+        $this->baseViewPath = $baseViewPath ?: resource_path('views/livewire');
+        $this->component = str_replace(['.', '\\'], '/', $component);
+    }
+
+    public function directories(): array
+    {
+        $parts = explode('/', $this->component);
+        array_pop($parts);
+        return $parts;
+    }
+
+    public function className(): string
+    {
+        $parts = explode('/', $this->component);
+        return Str::studly(array_pop($parts));
+    }
+
+    public function classNamespace(): string
+    {
+        $dirs = $this->directories();
+        return empty($dirs)
+            ? $this->baseNamespace
+            : $this->baseNamespace . '\\' . implode('\\', array_map(fn($dir) => Str::studly($dir), $dirs));
+    }
+
+    public function classPath(): string
+    {
+        $namespace = $this->classNamespace();
+        $path = Str::replaceFirst('App\\', '', $namespace);
+        $path = str_replace('\\', '/', $path);
+
+        return app_path($path . '/' . $this->className() . '.php');
+    }
+
+    public function relativeClassPath(): string
+    {
+        return Str::replaceFirst(base_path() . DIRECTORY_SEPARATOR, '', $this->classPath());
     }
 }
